@@ -79,6 +79,34 @@
   color-scheme: light;
 }
 
+/* Matches the Starship Whisperer's Chart: deep space, amber light, mono
+   kickers. Each speaker turn reads as an incoming transmission card. */
+[data-theme="whisperer"] {
+  --bg: #05060d; --bg-alt: #0a0c1a; --bg-deep: #03040a; --bg-input: #101324;
+  --bg-hover: rgba(255, 255, 255, .04); --border: rgba(160, 175, 230, .18);
+  --text: #e6e9f5; --text-muted: #99a0bd; --text-strong: #ffffff;
+  --accent: #ffcf70; --accent-hover: #ffc04a; --accent-text: #1a1206;
+  --danger: #ff7a7a; --link: #ffcf70; --code-bg: #0d1020; --quote: #ffcf70;
+  --selected: rgba(255, 207, 112, .16); --spoiler: #2a2f4a;
+  --bubble: #141830; --bubble-text: #e6e9f5; --bubble-me: #6b5420; --bubble-me-text: #fff6e0;
+  --card: rgba(16, 19, 36, .78);
+  --font: "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-name: ui-monospace, "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+  --name-weight: 600; --name-transform: uppercase; --name-spacing: .12em;
+  --avatar-ring: 0 0 0 1px rgba(255, 207, 112, .45);
+  color-scheme: dark;
+}
+[data-theme="whisperer"] .chat,
+[data-theme="whisperer"] body.export { background: radial-gradient(ellipse at 30% 10%, #12163a 0%, #05060d 60%) fixed, #05060d; }
+[data-theme="whisperer"] .group {
+  margin: 10px 16px 0; padding: 12px 14px; background: var(--card);
+  border: 1px solid var(--border); border-left: 3px solid var(--speaker, var(--accent)); border-radius: 12px;
+}
+[data-theme="whisperer"] .group.writer { --speaker: #99a0bd; }
+[data-theme="whisperer"] .name { font-size: 12px; }
+[data-theme="whisperer"] .content { font-size: 15.5px; line-height: 1.55; }
+[data-theme="whisperer"] .btn, [data-theme="whisperer"] #themeSelect { border-radius: 999px; }
+
 /* ---------- Base ---------- */
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }

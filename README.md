@@ -20,7 +20,7 @@ Everything stays in your browser (localStorage). Nothing is uploaded, and there'
 
 ### Themes
 
-Discord dark/light, Starship, Bubbles light/dark (Instagram-style, with your messages on the right) and Parchment (book-style prose). Each speaker can be set to the left or right side in the bubble themes.
+Discord dark/light, Starship, Whisperer (matches the Starship Whisperer's Chart), Bubbles light/dark (Instagram-style, with your messages on the right) and Parchment (book-style prose). Each speaker can be set to the left or right side in the bubble themes.
 
 ## Notes and limits
 

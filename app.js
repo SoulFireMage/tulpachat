@@ -11,6 +11,7 @@ const THEMES = {
   'discord-dark':  { label: 'Discord dark',  layout: 'rows' },
   'discord-light': { label: 'Discord light', layout: 'rows' },
   'starship':      { label: 'Starship',      layout: 'rows' },
+  'whisperer':     { label: 'Whisperer',     layout: 'rows' },
   'bubbles-light': { label: 'Bubbles light', layout: 'bubbles' },
   'bubbles-dark':  { label: 'Bubbles dark',  layout: 'bubbles' },
   'parchment':     { label: 'Parchment (prose)', layout: 'prose' },
