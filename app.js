@@ -53,7 +53,7 @@ function defaultSettings() {
   return {
     theme: 'discord-dark', writerName: 'Writer', writerAvatar: '', writerSide: 'right',
     showTimestamps: true, showTags: true, colorNames: true, groupMessages: true,
-    autoLatch: false, imageProxy: true, captureWidth: 480,
+    autoLatch: false, imageProxy: true, captureWidth: 480, enterKey: 'auto',
   };
 }
 function normaliseState(raw) {
@@ -603,6 +603,7 @@ function renderAll() {
   renderStories();
   renderStream({ scroll: 'bottom' });
   updateSpeakerBar();
+  updateEnterHint();
 }
 
 // ---------------------------------------------------------------------------
@@ -667,14 +668,14 @@ function buildEditor(m) {
   };
   ta.addEventListener('keydown', e => {
     if (e.key === 'Escape') { e.preventDefault(); done(); }
-    else if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); save(); }
+    else if (isSubmitKey(e)) { e.preventDefault(); save(); }
   });
   ta.addEventListener('input', () => autoGrow(ta));
   requestAnimationFrame(() => { autoGrow(ta); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); });
 
   return h('div', { class: 'editor', onclick: e => e.stopPropagation() }, ta,
     h('div', { class: 'editor-row' }, sel,
-      h('span', { class: 'muted small spacer', text: 'Enter save · Esc cancel' }),
+      h('span', { class: 'muted small spacer', text: `${enterSends() ? 'Enter' : 'Ctrl+Enter'} save · Esc cancel` }),
       h('button', { type: 'button', class: 'btn', text: 'Cancel', onclick: done }),
       h('button', { type: 'button', class: 'btn primary', text: 'Save', onclick: save })));
 }
@@ -858,6 +859,7 @@ function openSettings() {
   f.writerAvatar.value = s.writerAvatar.startsWith('data:') ? '' : s.writerAvatar;
   f.writerAvatar.placeholder = s.writerAvatar.startsWith('data:') ? '(uploaded image)' : 'https://…';
   f.writerSide.value = s.writerSide;
+  f.enterKey.value = s.enterKey;
   for (const k of BOOL_SETTINGS) f[k].checked = !!s[k];
   $('settingsDialog').showModal();
 }
@@ -867,6 +869,8 @@ function readSettingsForm() {
   s.writerName = f.writerName.value.trim() || 'Writer';
   if (f.writerAvatar.value.trim() || !s.writerAvatar.startsWith('data:')) s.writerAvatar = f.writerAvatar.value.trim();
   s.writerSide = f.writerSide.value;
+  s.enterKey = f.enterKey.value;
+  updateEnterHint();
   for (const k of BOOL_SETTINGS) s[k] = f[k].checked;
   persist();
   applyTheme();
@@ -1091,6 +1095,24 @@ async function capturePng(mode) {
 // ---------------------------------------------------------------------------
 // Composer
 // ---------------------------------------------------------------------------
+// Enter sends on keyboards; on touch screens (by default) it's a new line
+// and the Send button posts. Ctrl/⌘+Enter always sends.
+const coarsePointer = matchMedia('(hover: none) and (pointer: coarse)');
+function enterSends() {
+  const mode = state.settings.enterKey;
+  return mode === 'send' || (mode === 'auto' && !coarsePointer.matches);
+}
+function isSubmitKey(e) {
+  if (e.key !== 'Enter' || e.isComposing) return false;
+  if (e.ctrlKey || e.metaKey) return true;
+  return enterSends() && !e.shiftKey;
+}
+function updateEnterHint() {
+  const sends = enterSends();
+  $('input').setAttribute('enterkeyhint', sends ? 'send' : 'enter');
+  $('enterHint').textContent = sends ? 'Enter send · Shift+Enter new line' : 'Enter new line · Ctrl+Enter or Send button posts';
+}
+
 function autoGrow(ta) {
   ta.style.height = 'auto';
   ta.style.height = ta.scrollHeight + 2 + 'px';
@@ -1108,7 +1130,7 @@ function wire() {
 
   input.addEventListener('input', () => { autoGrow(input); updateSpeakerBar(); });
   input.addEventListener('keydown', e => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
+    if (isSubmitKey(e)) { e.preventDefault(); send(); }
     else if (e.key === 'ArrowUp' && !input.value) {
       const last = story().messages[story().messages.length - 1];
       if (last) { e.preventDefault(); startEdit(last.id); }

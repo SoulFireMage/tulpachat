@@ -70,7 +70,7 @@
           <textarea id="input" rows="1" placeholder="Type with someone's brackets, e.g. k:hello" aria-label="Message"></textarea>
           <button type="button" class="btn primary" id="sendBtn">Send</button>
         </div>
-        <div class="hint">Enter send · Shift+Enter new line · <code>\</code> skip proxy · <code>\\</code> unlatch · ↑ edit last</div>
+        <div class="hint"><span id="enterHint">Enter send · Shift+Enter new line</span> · <code>\</code> skip proxy · <code>\\</code> unlatch · ↑ edit last</div>
       </footer>
     </main>
   </div>
@@ -151,7 +151,14 @@
       <label class="check"><input type="checkbox" name="groupMessages"> Group consecutive messages</label>
     </fieldset>
     <fieldset>
-      <legend>Proxying</legend>
+      <legend>Typing</legend>
+      <label class="row">Enter key
+        <select name="enterKey" class="field">
+          <option value="auto">Automatic: sends on a keyboard, new line on a phone</option>
+          <option value="send">Always sends (Shift+Enter for a new line)</option>
+          <option value="newline">Always a new line (Ctrl+Enter or Send button posts)</option>
+        </select>
+      </label>
       <label class="check"><input type="checkbox" name="autoLatch"> Latch mode: keep speaking as whoever last used their brackets</label>
     </fieldset>
     <fieldset>

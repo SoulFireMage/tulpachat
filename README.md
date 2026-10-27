@@ -10,7 +10,8 @@ Everything stays in your browser (localStorage). Nothing is uploaded, and there'
 2. **Type.** `k:hello` or `[hello]` posts as whoever owns those brackets. The most specific bracket wins, so `kat:` beats `k:`. Text without brackets posts as you (set your name and avatar in ⚙ Settings).
    - Click a name in the cast to **latch** them, so plain text posts as them. Click again, or click *Writer*, to unlatch.
    - `\text` skips the proxy once. `\\text` unlatches.
-   - Shift+Enter starts a new line. ↑ in an empty box edits your last message.
+   - On a computer Enter sends and Shift+Enter starts a new line. On a phone, Enter starts a new line and the Send button posts. Change this in ⚙ Settings → Enter key. Ctrl/⌘+Enter always sends.
+   - ↑ in an empty box edits your last message.
    - Discord markdown works: `*italic*`, `**bold**`, `__underline__`, `~~strike~~`, `||spoiler||`, `> quote`, `` `code` ``, `# heading`.
 3. **Shape the story.** Hover a message (tap on touch screens) to **edit** (or double-click), **move** it up or down, **write after it**, or **delete** it (deleting can be undone). The *Stories* tab keeps as many separate stories as you like.
 4. **Get it out.**
