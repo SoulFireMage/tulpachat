@@ -1238,7 +1238,32 @@ async function cloudSignIn(email, password) {
 async function cloudSignUp(email, password) {
   await cloudConnect();
   setCloudUser(await cloud.skapi.signup({ email, password, name: state.settings.writerName }, { login: true }));
+  // Send the verification code straight away; the account works either way.
+  cloud.skapi.verifyEmail()
+    .then(() => { $('verifyMsg').textContent = `We’ve emailed a code to ${email}. Enter it here to verify.`; })
+    .catch(() => { /* they can ask for one from Settings */ });
   await cloudSync();
+}
+
+// Email verification (needed for password reset) and the reset itself.
+async function cloudSendVerification() {
+  await cloud.skapi.verifyEmail();
+}
+async function cloudVerify(code) {
+  await cloud.skapi.verifyEmail({ code });
+  try { setCloudUser(await cloud.skapi.getProfile({ refreshToken: true })); }
+  catch { cloud.user.email_verified = true; renderAccount(); }
+  if (cloud.user) cloud.user.email_verified = true;
+  renderAccount();
+}
+async function cloudSendReset(email) {
+  await cloudConnect();
+  await cloud.skapi.forgotPassword({ email });
+}
+async function cloudReset(email, code, newPassword) {
+  await cloudConnect();
+  await cloud.skapi.resetPassword({ email, code, new_password: newPassword });
+  await cloudSignIn(email, newPassword);
 }
 
 async function cloudSignOut() {
@@ -1322,6 +1347,7 @@ function renderAccount() {
   const btn = $('cloudBtn');
   btn.dataset.status = cloud.status;
   let label = 'Sign in', title = 'Sign in to sync between devices';
+  $('verifyBox').hidden = !signedIn || !!cloud.user.email_verified;
   if (signedIn) {
     $('accountEmail').textContent = cloud.user.email || cloud.user.name || 'your account';
     if (cloud.status === 'syncing') { label = 'Syncing…'; title = 'Syncing with your account'; }
@@ -1501,6 +1527,43 @@ function wire() {
   ['authEmail', 'authPassword'].forEach(id => $(id).addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); runAuth(cloudSignIn, 'Signing in…'); }
   }));
+  const step = (msgId, btnIds) => async (work, busy, done) => {
+    const say = t => { $(msgId).textContent = t || ''; };
+    say(busy);
+    btnIds.forEach(id => { $(id).disabled = true; });
+    try { await work(); say(done); return true; }
+    catch (err) { say((err && err.message) || 'That didn’t work. Check your connection and try again.'); return false; }
+    finally { btnIds.forEach(id => { $(id).disabled = false; }); }
+  };
+  const verifyStep = step('verifyMsg', ['sendVerifyBtn', 'doVerifyBtn']);
+  $('sendVerifyBtn').addEventListener('click', () =>
+    verifyStep(cloudSendVerification, 'Sending…', `Code sent to ${cloud.user && cloud.user.email}. It can take a minute; check spam too.`));
+  $('doVerifyBtn').addEventListener('click', async () => {
+    const code = $('verifyCode').value.trim();
+    if (!code) { $('verifyMsg').textContent = 'Enter the code from the email.'; return; }
+    if (await verifyStep(() => cloudVerify(code), 'Checking…', '')) { $('verifyCode').value = ''; toast('Email verified. You can now reset your password if you ever need to.'); }
+  });
+  $('verifyCode').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('doVerifyBtn').click(); } });
+
+  const resetStep = step('authMsg', ['sendResetBtn', 'doResetBtn', 'signInBtn', 'signUpBtn']);
+  $('forgotBtn').addEventListener('click', () => { $('resetBox').hidden = !$('resetBox').hidden; $('authEmail').focus(); });
+  $('sendResetBtn').addEventListener('click', async () => {
+    const email = $('authEmail').value.trim();
+    if (!email) { authMsg('Enter your email above first.'); return; }
+    if (await resetStep(() => cloudSendReset(email), 'Sending…', 'If that email is verified, a code is on its way. Check spam too.')) $('resetStep2').hidden = false;
+  });
+  $('doResetBtn').addEventListener('click', async () => {
+    const email = $('authEmail').value.trim(), code = $('resetCode').value.trim(), pw = $('resetPassword').value;
+    if (!email || !code) { authMsg('Enter your email and the code from the email.'); return; }
+    if (pw.length < 6) { authMsg('The new password needs at least 6 characters.'); return; }
+    if (await resetStep(() => cloudReset(email, code, pw), 'Setting your new password…', '')) {
+      $('resetCode').value = $('resetPassword').value = '';
+      $('resetBox').hidden = $('resetStep2').hidden = true;
+      toast('Password changed and signed in.');
+    }
+  });
+  ['resetCode', 'resetPassword'].forEach(id => $(id).addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('doResetBtn').click(); } }));
+
   $('signOutBtn').addEventListener('click', async () => { await cloudSignOut(); toast('Signed out. Everything is still in this browser.'); });
   $('syncNowBtn').addEventListener('click', () => cloudSync());
   $('cloudBtn').addEventListener('click', () => { openSettings(); (cloud.user ? $('syncNowBtn') : $('authEmail')).focus(); });

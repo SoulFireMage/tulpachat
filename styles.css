@@ -354,6 +354,9 @@ html.capture .msg.selected { background: var(--selected) !important; }
 .cloud-btn[data-status="error"] { color: var(--danger); border-color: var(--danger); }
 .auth-msg { margin: 0 0 6px; color: var(--text-strong); min-height: 1em; }
 .auth-msg:empty { display: none; }
+.linkish { background: none; border: 0; padding: 0; color: var(--link); text-decoration: underline; cursor: pointer; }
+.verify-box { border: 1px solid var(--accent); border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; }
+.verify-box p { margin: 0 0 6px; }
 .dialog { overflow-y: auto; }
 .preview { height: min(55vh, 460px); resize: vertical; white-space: pre; font-size: 12.5px; }
 

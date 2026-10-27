@@ -139,12 +139,33 @@
         <div class="row inline">
           <button type="button" class="btn primary" id="signInBtn">Sign in</button>
           <button type="button" class="btn" id="signUpBtn">Create account</button>
+          <button type="button" class="linkish small" id="forgotBtn">Forgot password?</button>
+        </div>
+        <div id="resetBox" hidden>
+          <p class="muted small">We’ll email a code to the address above. This only works if you verified that email.</p>
+          <div class="row inline">
+            <button type="button" class="btn" id="sendResetBtn">Email me a code</button>
+          </div>
+          <div id="resetStep2" hidden>
+            <label class="row">Code from the email <input id="resetCode" class="field" inputmode="numeric" autocomplete="one-time-code"></label>
+            <label class="row">New password <small>(at least 6 characters)</small> <input id="resetPassword" type="password" class="field" autocomplete="new-password"></label>
+            <div class="row inline"><button type="button" class="btn primary" id="doResetBtn">Set new password</button></div>
+          </div>
         </div>
         <p class="small auth-msg" id="authMsg" role="alert"></p>
       </div>
       <div id="accountIn" hidden>
         <p class="small">Signed in as <b id="accountEmail"></b></p>
         <p class="muted small" id="syncStatus"></p>
+        <div id="verifyBox" class="verify-box" hidden>
+          <p class="small"><b>Verify your email</b> so you can reset your password if you ever forget it.</p>
+          <div class="row inline">
+            <button type="button" class="btn" id="sendVerifyBtn">Email me a code</button>
+            <input id="verifyCode" class="field small" placeholder="Code" inputmode="numeric" autocomplete="one-time-code" aria-label="Verification code" size="8">
+            <button type="button" class="btn primary" id="doVerifyBtn">Verify</button>
+          </div>
+          <p class="small auth-msg" id="verifyMsg" role="alert"></p>
+        </div>
         <div class="row inline">
           <button type="button" class="btn" id="syncNowBtn">Sync now</button>
           <button type="button" class="btn" id="signOutBtn">Sign out</button>
