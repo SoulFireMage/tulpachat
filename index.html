@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en" data-theme="discord-dark" data-layout="rows" class="color-names">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tulpa Chat</title>
+  <meta name="description" content="Write proxied conversations and stories with your Tupperbox or PluralKit cast, right in the browser.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%AD%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+
+  <header class="topbar">
+    <button id="menuBtn" class="icon-btn only-narrow" type="button" aria-label="Open cast and stories">☰</button>
+    <div class="brand">🎭 <span class="lbl">Tulpa Chat</span></div>
+    <input id="storyTitle" class="story-title" aria-label="Story title" maxlength="120" spellcheck="false">
+    <div class="top-actions">
+      <select id="themeSelect" aria-label="Theme"></select>
+      <button id="captureBtn" class="btn" type="button" title="Screenshot mode">📸 <span class="lbl">Capture</span></button>
+      <button id="exportBtn" class="btn" type="button" title="Export this story">⬇ <span class="lbl">Export</span></button>
+      <button id="settingsBtn" class="icon-btn" type="button" aria-label="Settings" title="Settings">⚙</button>
+    </div>
+  </header>
+
+  <div class="capture-bar" id="captureBar" hidden>
+    <span class="capture-info" id="captureInfo">Tap messages to pick them. None picked = whole story.</span>
+    <div class="capture-widths" id="captureWidths" role="group" aria-label="Capture width"></div>
+    <button class="btn" type="button" id="captureClear">Clear picks</button>
+    <button class="btn" type="button" id="captureCopy">Copy PNG</button>
+    <button class="btn primary" type="button" id="captureSave">Save PNG</button>
+    <button class="btn" type="button" id="captureDone">Done</button>
+  </div>
+
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <div class="tabs" role="tablist">
+        <button type="button" role="tab" class="tab active" data-tab="cast">Cast (<span id="castCount">0</span>)</button>
+        <button type="button" role="tab" class="tab" data-tab="stories">Stories</button>
+      </div>
+
+      <section class="panel" id="castPanel">
+        <div class="panel-actions">
+          <label class="btn primary" title="Tupperbox or PluralKit export, a Tulpa Chat story file, or a backup">
+            📁 Import
+            <input type="file" id="importInput" accept=".json,application/json" hidden>
+          </label>
+          <button type="button" class="btn" id="addTupperBtn">＋ Add</button>
+        </div>
+        <input type="search" id="castFilter" class="field" placeholder="Filter cast…" aria-label="Filter cast">
+        <div id="castList" class="list"></div>
+      </section>
+
+      <section class="panel" id="storiesPanel" hidden>
+        <div class="panel-actions">
+          <button type="button" class="btn primary" id="newStoryBtn">＋ New story</button>
+        </div>
+        <div id="storyList" class="list"></div>
+      </section>
+    </aside>
+    <div class="scrim" id="scrim"></div>
+
+    <main class="chat">
+      <div class="stream" id="stream">
+        <div class="stream-inner" id="streamInner"></div>
+      </div>
+      <footer class="composer">
+        <div class="speaker-bar" id="speakerBar" hidden></div>
+        <div class="composer-row">
+          <textarea id="input" rows="1" placeholder="Type with someone's brackets, e.g. k:hello" aria-label="Message"></textarea>
+          <button type="button" class="btn primary" id="sendBtn">Send</button>
+        </div>
+        <div class="hint">Enter send · Shift+Enter new line · <code>\</code> skip proxy · <code>\\</code> unlatch · ↑ edit last</div>
+      </footer>
+    </main>
+  </div>
+</div>
+
+<dialog id="tupperDialog" class="dialog">
+  <form method="dialog" id="tupperForm">
+    <h2 id="tupperDialogTitle">Speaker</h2>
+    <label class="row">Name <input name="name" class="field" required maxlength="80"></label>
+    <label class="row">Display name <small>(optional, shown instead of name)</small> <input name="nick" class="field" maxlength="80"></label>
+    <label class="row">Tag <small>(appended to the name, e.g. a system tag)</small> <input name="tag" class="field" maxlength="40"></label>
+    <label class="row">Brackets <small>— one per line, <code>text</code> marks where the message goes</small>
+      <textarea name="brackets" class="field mono" rows="3" placeholder="k:text&#10;[text]"></textarea>
+    </label>
+    <label class="row">Avatar URL <input name="avatar" class="field" type="url" placeholder="https://…"></label>
+    <div class="row inline">
+      <label class="btn">Upload avatar <input type="file" name="avatarFile" accept="image/*" hidden></label>
+      <img id="tupperAvatarPreview" class="avatar md" alt="">
+      <button type="button" class="btn" id="tupperAvatarClear">Remove upload</button>
+    </div>
+    <div class="row inline">
+      <label>Name colour <input type="color" name="color"></label>
+      <label><input type="checkbox" name="colorAuto"> Auto</label>
+      <label>Bubble side
+        <select name="side" class="field small">
+          <option value="left">Left</option>
+          <option value="right">Right</option>
+        </select>
+      </label>
+    </div>
+    <div class="dialog-actions">
+      <button type="button" class="btn danger" id="tupperDelete">Delete</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn" value="cancel" id="tupperCancel">Cancel</button>
+      <button type="submit" class="btn primary" value="save">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="exportDialog" class="dialog wide">
+  <h2>Export story</h2>
+  <div class="row inline">
+    <label>Format <select id="exportFormat" class="field small"></select></label>
+    <span class="spacer"></span>
+    <button type="button" class="btn" id="exportCopy">Copy</button>
+    <button type="button" class="btn primary" id="exportDownload">Download</button>
+  </div>
+  <textarea id="exportPreview" class="field mono preview" readonly aria-label="Export preview"></textarea>
+  <div class="dialog-actions">
+    <span class="muted small" id="exportNote"></span>
+    <span class="spacer"></span>
+    <button type="button" class="btn" id="exportClose">Close</button>
+  </div>
+</dialog>
+
+<dialog id="settingsDialog" class="dialog">
+  <form method="dialog" id="settingsForm">
+    <h2>Settings</h2>
+    <fieldset>
+      <legend>You (unproxied messages)</legend>
+      <label class="row">Name <input name="writerName" class="field" maxlength="80"></label>
+      <label class="row">Avatar URL <input name="writerAvatar" class="field" type="url" placeholder="https://…"></label>
+      <div class="row inline">
+        <label class="btn">Upload avatar <input type="file" name="writerAvatarFile" accept="image/*" hidden></label>
+        <label>Bubble side
+          <select name="writerSide" class="field small">
+            <option value="right">Right</option>
+            <option value="left">Left</option>
+          </select>
+        </label>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Display</legend>
+      <label class="check"><input type="checkbox" name="showTimestamps"> Show timestamps</label>
+      <label class="check"><input type="checkbox" name="showTags"> Show tags after names</label>
+      <label class="check"><input type="checkbox" name="colorNames"> Coloured names</label>
+      <label class="check"><input type="checkbox" name="groupMessages"> Group consecutive messages</label>
+    </fieldset>
+    <fieldset>
+      <legend>Proxying</legend>
+      <label class="check"><input type="checkbox" name="autoLatch"> Latch mode: keep speaking as whoever last used their brackets</label>
+    </fieldset>
+    <fieldset>
+      <legend>Your data</legend>
+      <p class="muted small">Everything lives in this browser only. Download a backup to move it or keep it safe.</p>
+      <div class="row inline">
+        <button type="button" class="btn" id="backupBtn">Download backup</button>
+        <button type="button" class="btn" id="restoreBtn">Restore backup…</button>
+        <button type="button" class="btn danger" id="wipeBtn">Delete everything</button>
+      </div>
+    </fieldset>
+    <div class="dialog-actions">
+      <span class="spacer"></span>
+      <button type="submit" class="btn primary">Done</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<div class="capture-frame" id="captureFrame" aria-hidden="true"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
