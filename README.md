@@ -25,7 +25,7 @@ Discord dark/light, Starship, Whisperer (matches the Starship Whisperer's Chart)
 ## Notes and limits
 
 - **Avatars hosted on Discord** (`cdn.discordapp.com/attachments/…`) use signed links that expire. When one breaks, the speaker shows coloured initials instead. Use *Upload avatar* in the speaker editor for a copy that never breaks; it's resized to 128px and stored locally.
-- PNG capture uses [html2canvas](https://html2canvas.hertzen.com/) from cdnjs, loaded only when you capture. Avatars from hosts that don't allow cross-origin access fall back to initials in the PNG.
+- PNG capture uses [html2canvas](https://html2canvas.hertzen.com/) from cdnjs, loaded only when you capture. Tupperbox's avatar host doesn't allow other sites to copy its images, so for PNGs and web-page exports the avatars are fetched through the open-source [wsrv.nl](https://wsrv.nl/) image proxy. Only the avatar links go there, and only when you capture or export. You can turn this off in Settings, and avatars then show as initials.
 - Browser storage is per browser and per device, and is usually limited to around 5 MB. Keep a backup.
 
 ## Roadmap

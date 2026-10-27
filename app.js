@@ -53,7 +53,7 @@ function defaultSettings() {
   return {
     theme: 'discord-dark', writerName: 'Writer', writerAvatar: '', writerSide: 'right',
     showTimestamps: true, showTags: true, colorNames: true, groupMessages: true,
-    autoLatch: false, captureWidth: 480,
+    autoLatch: false, imageProxy: true, captureWidth: 480,
   };
 }
 function normaliseState(raw) {
@@ -850,7 +850,7 @@ function deleteTupper() {
 // ---------------------------------------------------------------------------
 // Settings dialog
 // ---------------------------------------------------------------------------
-const BOOL_SETTINGS = ['showTimestamps', 'showTags', 'colorNames', 'groupMessages', 'autoLatch'];
+const BOOL_SETTINGS = ['showTimestamps', 'showTags', 'colorNames', 'groupMessages', 'autoLatch', 'imageProxy'];
 
 function openSettings() {
   const f = $('settingsForm'), s = state.settings;
@@ -942,22 +942,32 @@ const EXPORTS = {
 };
 
 const imageCache = new Map();
+// Public image proxy that adds CORS headers. Tupperbox's avatar CDN sends
+// none, so without this every avatar in a PNG would fall back to initials.
+const IMAGE_PROXY = url => `https://wsrv.nl/?url=${encodeURIComponent(url)}&w=160&h=160&fit=cover&output=webp`;
+
+async function fetchDataUrl(url) {
+  const res = await fetch(url, { mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer' });
+  if (!res.ok) throw new Error(res.status);
+  return blobToDataUrl(await res.blob());
+}
+
 // Swap avatar URLs for data URLs so exports and PNGs are self-contained.
-// Hosts that refuse CORS (or expired links) fall back to initials.
+// Direct fetch first, then the proxy (if allowed), then initials.
 async function inlineImages(root) {
   await Promise.all([...root.querySelectorAll('img')].map(async img => {
     const src = img.getAttribute('src') || '';
     if (!src.startsWith('data:')) {
-      try {
-        if (!imageCache.has(src)) {
-          const res = await fetch(src, { mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer' });
-          if (!res.ok) throw new Error(res.status);
-          imageCache.set(src, await blobToDataUrl(await res.blob()));
+      if (!imageCache.has(src)) {
+        let data = '';
+        try { data = await fetchDataUrl(src); } catch {
+          if (state.settings.imageProxy && /^https?:/i.test(src)) {
+            try { data = await fetchDataUrl(IMAGE_PROXY(src)); } catch { /* fall through to initials */ }
+          }
         }
-        img.src = imageCache.get(src);
-      } catch {
-        img.src = img.dataset.fallback || '';
+        if (data) imageCache.set(src, data);
       }
+      img.src = imageCache.get(src) || img.dataset.fallback || '';
     }
     img.onerror = null;
     try { await img.decode(); } catch { /* broken image: html2canvas skips it */ }
