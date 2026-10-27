@@ -62,10 +62,18 @@ function normaliseState(raw) {
     v: 1,
     cast: Array.isArray(s.cast) ? s.cast : [],
     groups: Array.isArray(s.groups) ? s.groups : [],
-    stories: Array.isArray(s.stories) && s.stories.length ? s.stories : [newStory()],
+    // A brand-new blank story is "pristine" until written in, so signing in
+    // on a fresh device doesn't add an empty story to the account.
+    stories: Array.isArray(s.stories) && s.stories.length ? s.stories : [{ ...newStory(), pristine: true }],
     activeStoryId: s.activeStoryId,
     latch: s.latch || null,
     settings: { ...defaultSettings(), ...(s.settings || {}) },
+    settingsUpdated: Number(s.settingsUpdated) || 0,
+    // Deletion times, so a sync doesn't bring back what another device removed.
+    deleted: {
+      stories: { ...((s.deleted && s.deleted.stories) || {}) },
+      cast: { ...((s.deleted && s.deleted.cast) || {}) },
+    },
   };
   if (!THEMES[out.settings.theme]) out.settings.theme = 'discord-dark';
   if (!out.stories.some(st => st.id === out.activeStoryId)) out.activeStoryId = out.stories[0].id;
@@ -92,11 +100,18 @@ function flush() {
   clearTimeout(saveTimer);
   saveTimer = 0;
   if (!store.save(state)) toast('Could not save — browser storage is full or blocked. Download a backup from Settings.');
+  scheduleCloudSync();
 }
 window.addEventListener('pagehide', () => { if (saveTimer) flush(); });
 
 const story = () => state.stories.find(s => s.id === state.activeStoryId);
-function touchStory() { story().updated = Date.now(); persist(); }
+function touchStory() {
+  const st = story();
+  st.updated = Date.now();
+  delete st.pristine;
+  persist();
+}
+function touchSettings() { state.settingsUpdated = Date.now(); persist(); }
 
 // ---------------------------------------------------------------------------
 // Small helpers
@@ -359,11 +374,11 @@ function mergeCast(parsed) {
     const t = state.cast.find(x => c.src && x.src === c.src) || state.cast.find(x => !x.src && x.name === c.name);
     if (t) {
       const keepColor = t.color;
-      Object.assign(t, c);
+      Object.assign(t, c, { updated: Date.now() });
       if (!c.color) t.color = keepColor || '';
       updated++;
     } else {
-      state.cast.push({ id: uid(), color: '', side: 'left', avatarUpload: '', ...c });
+      state.cast.push({ id: uid(), color: '', side: 'left', avatarUpload: '', ...c, updated: Date.now() });
       added++;
     }
   }
@@ -597,6 +612,7 @@ function updateSpeakerBar() {
 }
 
 function renderAll() {
+  renderAccount();
   applyTheme();
   renderHeader();
   renderCast();
@@ -750,7 +766,8 @@ function deleteStory(id) {
   const st = state.stories.find(s => s.id === id);
   if (!st || !confirm(`Delete “${st.title}” and its ${st.messages.length} messages? This can't be undone.`)) return;
   state.stories = state.stories.filter(s => s.id !== id);
-  if (!state.stories.length) state.stories.push(newStory());
+  state.deleted.stories[id] = Date.now();
+  if (!state.stories.length) state.stories.push({ ...newStory(), pristine: true });
   if (state.activeStoryId === id) openStory([...state.stories].sort((a, b) => b.updated - a.updated)[0].id);
   else { persist(); renderStories(); }
 }
@@ -824,6 +841,7 @@ function saveTupperDialog() {
   Object.assign(t, {
     name, nick: f.nick.value.trim(), tag: f.tag.value.trim(), brackets: pairs,
     avatar: f.avatar.value.trim(), color: f.colorAuto.checked ? '' : f.color.value, side: f.side.value,
+    updated: Date.now(),
   });
   if (pendingUpload !== undefined) t.avatarUpload = pendingUpload;
   flush();
@@ -840,6 +858,7 @@ function deleteTupper() {
   const note = used ? ` Their ${used} message${used === 1 ? '' : 's'} will keep the name “${t.name}”.` : '';
   if (!confirm(`Remove ${t.nick || t.name} from the cast?${note}`)) return;
   state.cast = state.cast.filter(x => x.id !== t.id);
+  state.deleted.cast[t.src || t.id] = Date.now();
   if (state.latch === t.id) state.latch = null;
   $('tupperDialog').close();
   flush();
@@ -866,13 +885,14 @@ function openSettings() {
 
 function readSettingsForm() {
   const f = $('settingsForm'), s = state.settings;
+  const before = JSON.stringify(s);
   s.writerName = f.writerName.value.trim() || 'Writer';
   if (f.writerAvatar.value.trim() || !s.writerAvatar.startsWith('data:')) s.writerAvatar = f.writerAvatar.value.trim();
   s.writerSide = f.writerSide.value;
   s.enterKey = f.enterKey.value;
   updateEnterHint();
   for (const k of BOOL_SETTINGS) s[k] = f[k].checked;
-  persist();
+  if (JSON.stringify(s) !== before) touchSettings(); else persist();
   applyTheme();
   renderCast();
   renderStream();
@@ -1093,6 +1113,229 @@ async function capturePng(mode) {
 }
 
 // ---------------------------------------------------------------------------
+// Optional account (Skapi). This browser's copy stays the working copy; the
+// account holds one private record per person. Every sync fetches that
+// record, merges it with what's here (newest story or speaker wins, and
+// deletions are remembered) and writes the result back, so a phone and a PC
+// converge without either overwriting the other.
+// ---------------------------------------------------------------------------
+const SKAPI_PROJECT_ID = '5GJ5SJePWQUiq0jvYr-2ZVgaOLUqOhnse3Hcl8M4d';
+const SKAPI_SDK_URL = 'https://cdn.jsdelivr.net/npm/skapi-js@2.2.20/dist/skapi.js';
+const CLOUD_TABLE = 'tulpachat';
+const CLOUD_FLAG = 'tulpachat:signedIn'; // only load the SDK for people who use an account
+
+const cloud = { skapi: null, ready: null, user: null, busy: false, again: false, timer: 0, status: 'off', lastSync: 0, error: '' };
+
+function syncable(s) {
+  return { v: 1, cast: s.cast, groups: s.groups, stories: s.stories, settings: s.settings, settingsUpdated: s.settingsUpdated, deleted: s.deleted };
+}
+
+function newerOf(a, b) { return (b.updated || 0) > (a.updated || 0) ? b : a; }
+function maxTimes(a = {}, b = {}) {
+  const out = { ...a };
+  for (const [k, v] of Object.entries(b)) out[k] = Math.max(out[k] || 0, Number(v) || 0);
+  return out;
+}
+const isGone = (when, item) => !!when && when >= (item.updated || 0);
+
+function mergeStates(local, remoteRaw) {
+  const remote = remoteRaw && typeof remoteRaw === 'object' ? remoteRaw : {};
+  const deleted = {
+    stories: maxTimes(local.deleted.stories, remote.deleted && remote.deleted.stories),
+    cast: maxTimes(local.deleted.cast, remote.deleted && remote.deleted.cast),
+  };
+
+  // Cast: newest edit wins per id. The same Tupperbox import on two devices
+  // gives two ids for one person, so those are folded together by source id
+  // and their messages pointed at the survivor.
+  const castById = new Map();
+  for (const t of [...(remote.cast || []), ...local.cast]) {
+    const cur = castById.get(t.id);
+    castById.set(t.id, cur ? newerOf(cur, t) : t);
+  }
+  const bySrc = new Map(), rename = new Map(), cast = [];
+  for (const t of castById.values()) {
+    if (isGone(deleted.cast[t.src || t.id], t)) continue;
+    const twin = t.src && bySrc.get(t.src);
+    if (!twin) { if (t.src) bySrc.set(t.src, t); cast.push(t); continue; }
+    const keep = newerOf(twin, t), drop = keep === t ? twin : t;
+    rename.set(drop.id, keep.id);
+    if (keep !== twin) { cast[cast.indexOf(twin)] = keep; bySrc.set(t.src, keep); }
+  }
+
+  // Stories: newest wins per id; a pristine starter story gives way to real ones.
+  const remoteStories = (remote.stories || []).filter(st => !st.pristine);
+  const localStories = local.stories.filter(st => !(st.pristine && remoteStories.length));
+  const storyById = new Map();
+  for (const st of [...remoteStories, ...localStories]) {
+    const cur = storyById.get(st.id);
+    storyById.set(st.id, cur ? newerOf(cur, st) : st);
+  }
+  let stories = [...storyById.values()].filter(st => !isGone(deleted.stories[st.id], st));
+  if (rename.size) for (const st of stories) for (const m of st.messages || []) if (rename.has(m.speaker)) m.speaker = rename.get(m.speaker);
+  if (!stories.length) stories = [{ ...newStory(), pristine: true }];
+
+  const groups = new Map();
+  for (const g of [...(remote.groups || []), ...local.groups]) groups.set(g.id, g);
+
+  const remoteSettingsNewer = (Number(remote.settingsUpdated) || 0) > local.settingsUpdated;
+  const merged = normaliseState({
+    cast, groups: [...groups.values()], stories, deleted,
+    settings: remoteSettingsNewer ? remote.settings : local.settings,
+    settingsUpdated: Math.max(local.settingsUpdated, Number(remote.settingsUpdated) || 0),
+    activeStoryId: local.activeStoryId,
+    latch: rename.get(local.latch) || local.latch,
+  });
+  if (!stories.some(st => st.id === local.activeStoryId)) {
+    merged.activeStoryId = [...merged.stories].sort((a, b) => (b.updated || 0) - (a.updated || 0))[0].id;
+  }
+  if (merged.latch && !merged.cast.some(t => t.id === merged.latch)) merged.latch = null;
+  return merged;
+}
+
+function cloudConnect() {
+  if (!cloud.ready) {
+    cloud.ready = loadScript(SKAPI_SDK_URL).then(() => {
+      cloud.skapi = new Skapi(SKAPI_PROJECT_ID);
+      // Fires on sign-in, sign-out and an expired session.
+      cloud.skapi.onLogin = profile => { if (!profile && cloud.user) setCloudUser(null); };
+      return cloud.skapi;
+    });
+    cloud.ready.catch(() => { cloud.ready = null; });
+  }
+  return cloud.ready;
+}
+
+function setCloudUser(profile) {
+  cloud.user = profile || null;
+  cloud.status = profile ? 'idle' : 'off';
+  cloud.error = '';
+  try {
+    if (profile) localStorage.setItem(CLOUD_FLAG, '1'); else localStorage.removeItem(CLOUD_FLAG);
+  } catch { /* storage blocked: we just reconnect on demand */ }
+  renderAccount();
+}
+
+async function cloudStart() {
+  let flagged = false;
+  try { flagged = localStorage.getItem(CLOUD_FLAG) === '1'; } catch { /* blocked */ }
+  if (!flagged) return;
+  try {
+    await cloudConnect();
+    setCloudUser(await cloud.skapi.getProfile());
+    if (cloud.user) cloudSync();
+  } catch (err) {
+    cloudFailed(err);
+  }
+}
+
+async function cloudSignIn(email, password) {
+  await cloudConnect();
+  setCloudUser(await cloud.skapi.login({ email, password }));
+  await cloudSync();
+}
+
+async function cloudSignUp(email, password) {
+  await cloudConnect();
+  setCloudUser(await cloud.skapi.signup({ email, password, name: state.settings.writerName }, { login: true }));
+  await cloudSync();
+}
+
+async function cloudSignOut() {
+  clearTimeout(cloud.timer);
+  try { if (cloud.skapi) await cloud.skapi.logout(); } catch { /* signed out locally either way */ }
+  setCloudUser(null);
+}
+
+const cloudRecordId = () => 'tulpachat:' + cloud.user.user_id;
+
+async function fetchCloudCopy() {
+  try {
+    const res = await cloud.skapi.getRecords({ unique_id: cloudRecordId() });
+    const rec = res && Array.isArray(res.list) ? res.list[0] : null;
+    return rec && rec.data && rec.data.state ? rec.data : null;
+  } catch (err) {
+    if (err && /NOT_EXISTS|NOT_FOUND/.test(err.code || '')) return null;
+    throw err;
+  }
+}
+
+function scheduleCloudSync(delay = 2500) {
+  if (!cloud.user) return;
+  clearTimeout(cloud.timer);
+  cloud.timer = setTimeout(cloudSync, delay);
+}
+
+async function cloudSync() {
+  if (!cloud.user) return;
+  if (cloud.busy) { cloud.again = true; return; }
+  // Don't redraw underneath someone who is mid-edit.
+  if (ui.editingId) { scheduleCloudSync(4000); return; }
+  clearTimeout(cloud.timer);
+  cloud.busy = true;
+  cloud.status = 'syncing';
+  renderAccount();
+  try {
+    const remote = await fetchCloudCopy();
+    // Merge against the state as it is now, after the fetch, so edits made
+    // while the request was in flight aren't lost.
+    const mine = JSON.stringify(syncable(state));
+    const merged = remote ? mergeStates(state, remote.state) : state;
+    const result = JSON.stringify(syncable(merged));
+    if (result !== mine) {
+      state = merged;
+      store.save(state);
+      applyTheme();
+      renderHeader();
+      renderCast();
+      renderStories();
+      renderStream();
+      updateSpeakerBar();
+    }
+    if (!remote || result !== JSON.stringify(remote.state)) {
+      const data = { v: 1, saved: Date.now(), state: syncable(state) };
+      if (remote) await cloud.skapi.postRecord(data, { record_id: cloudRecordId() });
+      else await cloud.skapi.postRecord(data, { table: { name: CLOUD_TABLE, access_group: 'private' }, unique_id: cloudRecordId() });
+    }
+    cloud.status = 'idle';
+    cloud.error = '';
+    cloud.lastSync = Date.now();
+  } catch (err) {
+    cloudFailed(err);
+  } finally {
+    cloud.busy = false;
+    renderAccount();
+    if (cloud.again) { cloud.again = false; scheduleCloudSync(500); }
+  }
+}
+
+function cloudFailed(err) {
+  cloud.status = 'error';
+  cloud.error = (err && err.message) || 'Something went wrong talking to the account server.';
+  renderAccount();
+}
+
+function renderAccount() {
+  const signedIn = !!cloud.user;
+  $('accountOut').hidden = signedIn;
+  $('accountIn').hidden = !signedIn;
+  const btn = $('cloudBtn');
+  btn.dataset.status = cloud.status;
+  let label = 'Sign in', title = 'Sign in to sync between devices';
+  if (signedIn) {
+    $('accountEmail').textContent = cloud.user.email || cloud.user.name || 'your account';
+    if (cloud.status === 'syncing') { label = 'Syncing…'; title = 'Syncing with your account'; }
+    else if (cloud.status === 'error') { label = 'Sync problem'; title = cloud.error; }
+    else { label = 'Synced'; title = cloud.lastSync ? 'Last synced ' + fmtTime(cloud.lastSync) : 'Signed in'; }
+    $('syncStatus').textContent = cloud.status === 'error'
+      ? `Couldn’t sync: ${cloud.error} Your changes are safe in this browser and will go up next time.`
+      : cloud.status === 'syncing' ? 'Syncing…' : (cloud.lastSync ? 'Last synced ' + fmtTime(cloud.lastSync) + '.' : '');
+  }
+  $('cloudLbl').textContent = label;
+  btn.title = title;
+}
+
+// ---------------------------------------------------------------------------
 // Composer
 // ---------------------------------------------------------------------------
 // Enter sends on keyboards; on touch screens (by default) it's a new line
@@ -1126,7 +1369,7 @@ function wire() {
   const touch = matchMedia('(hover: none)');
 
   $('themeSelect').replaceChildren(...Object.entries(THEMES).map(([id, t]) => h('option', { value: id, text: t.label })));
-  $('themeSelect').addEventListener('change', e => { state.settings.theme = e.target.value; persist(); applyTheme(); renderStream(); });
+  $('themeSelect').addEventListener('change', e => { state.settings.theme = e.target.value; touchSettings(); applyTheme(); renderStream(); });
 
   input.addEventListener('input', () => { autoGrow(input); updateSpeakerBar(); });
   input.addEventListener('keydown', e => {
@@ -1212,15 +1455,19 @@ function wire() {
       state.settings.writerAvatar = await fileToAvatar(file);
       $('settingsForm').writerAvatar.value = '';
       $('settingsForm').writerAvatar.placeholder = '(uploaded image)';
-      persist();
+      touchSettings();
       renderCast();
       renderStream();
     } catch (err) { toast(err.message); }
   });
   $('backupBtn').addEventListener('click', () => download(backupData(), `tulpachat-backup-${new Date().toISOString().slice(0, 10)}.json`, 'application/json'));
   $('restoreBtn').addEventListener('click', () => { $('settingsDialog').close(); $('importInput').click(); });
-  $('wipeBtn').addEventListener('click', () => {
-    if (!confirm('Delete every story, speaker and setting in this browser? Download a backup first if you might want them.')) return;
+  $('wipeBtn').addEventListener('click', async () => {
+    const msg = cloud.user
+      ? 'Sign out and delete every story, speaker and setting in this browser? Your account keeps its copy.'
+      : 'Delete every story, speaker and setting in this browser? Download a backup first if you might want them.';
+    if (!confirm(msg)) return;
+    if (cloud.user) await cloudSignOut();
     store.clear();
     state = normaliseState(null);
     resetUi();
@@ -1229,6 +1476,36 @@ function wire() {
     renderAll();
     toast('All data deleted.');
   });
+
+  // Account
+  const authMsg = text => { $('authMsg').textContent = text || ''; };
+  const runAuth = async (action, busyText) => {
+    const email = $('authEmail').value.trim(), password = $('authPassword').value;
+    if (!email || !password) { authMsg('Enter your email and a password.'); return; }
+    if (password.length < 6) { authMsg('The password needs at least 6 characters.'); return; }
+    authMsg(busyText);
+    $('signInBtn').disabled = $('signUpBtn').disabled = true;
+    try {
+      await action(email, password);
+      $('authPassword').value = '';
+      authMsg('');
+      toast('Signed in. Your cast and stories now sync with your account.');
+    } catch (err) {
+      authMsg((err && err.message) || 'That didn’t work. Check your connection and try again.');
+    } finally {
+      $('signInBtn').disabled = $('signUpBtn').disabled = false;
+    }
+  };
+  $('signInBtn').addEventListener('click', () => runAuth(cloudSignIn, 'Signing in…'));
+  $('signUpBtn').addEventListener('click', () => runAuth(cloudSignUp, 'Creating your account…'));
+  ['authEmail', 'authPassword'].forEach(id => $(id).addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); runAuth(cloudSignIn, 'Signing in…'); }
+  }));
+  $('signOutBtn').addEventListener('click', async () => { await cloudSignOut(); toast('Signed out. Everything is still in this browser.'); });
+  $('syncNowBtn').addEventListener('click', () => cloudSync());
+  $('cloudBtn').addEventListener('click', () => { openSettings(); (cloud.user ? $('syncNowBtn') : $('authEmail')).focus(); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') cloudSync(); });
+  setInterval(() => { if (document.visibilityState === 'visible' && !cloud.busy) cloudSync(); }, 60000);
 
   // Export dialog
   $('exportFormat').replaceChildren(...Object.entries(EXPORTS).map(([id, x]) => h('option', { value: id, text: x.label })));
@@ -1258,5 +1535,6 @@ function wire() {
 wire();
 renderAll();
 $('input').focus();
+cloudStart();
 
 })();

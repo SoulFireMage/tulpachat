@@ -17,6 +17,7 @@
     <input id="storyTitle" class="story-title" aria-label="Story title" maxlength="120" spellcheck="false">
     <div class="top-actions">
       <select id="themeSelect" aria-label="Theme"></select>
+      <button id="cloudBtn" class="btn cloud-btn" type="button" data-status="off">☁ <span class="lbl" id="cloudLbl">Sign in</span></button>
       <button id="captureBtn" class="btn" type="button" title="Screenshot mode">📸 <span class="lbl">Capture</span></button>
       <button id="exportBtn" class="btn" type="button" title="Export this story">⬇ <span class="lbl">Export</span></button>
       <button id="settingsBtn" class="icon-btn" type="button" aria-label="Settings" title="Settings">⚙</button>
@@ -129,6 +130,27 @@
 <dialog id="settingsDialog" class="dialog">
   <form method="dialog" id="settingsForm">
     <h2>Settings</h2>
+    <fieldset id="accountBox">
+      <legend>Account</legend>
+      <div id="accountOut">
+        <p class="muted small">Optional. Sign in to keep your cast, stories and settings in step between your phone and PC. Without an account everything stays in this browser only.</p>
+        <label class="row">Email <input id="authEmail" type="email" class="field" autocomplete="username" spellcheck="false"></label>
+        <label class="row">Password <small>(at least 6 characters)</small> <input id="authPassword" type="password" class="field" autocomplete="current-password"></label>
+        <div class="row inline">
+          <button type="button" class="btn primary" id="signInBtn">Sign in</button>
+          <button type="button" class="btn" id="signUpBtn">Create account</button>
+        </div>
+        <p class="small auth-msg" id="authMsg" role="alert"></p>
+      </div>
+      <div id="accountIn" hidden>
+        <p class="small">Signed in as <b id="accountEmail"></b></p>
+        <p class="muted small" id="syncStatus"></p>
+        <div class="row inline">
+          <button type="button" class="btn" id="syncNowBtn">Sync now</button>
+          <button type="button" class="btn" id="signOutBtn">Sign out</button>
+        </div>
+      </div>
+    </fieldset>
     <fieldset>
       <legend>You (unproxied messages)</legend>
       <label class="row">Name <input name="writerName" class="field" maxlength="80"></label>

@@ -349,6 +349,12 @@ html.capture .msg.selected { background: var(--selected) !important; }
 .dialog legend { font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; padding: 0 4px; }
 .dialog .check { display: flex; gap: 8px; align-items: center; font-size: 14px; margin-bottom: 8px; }
 .dialog-actions { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+.cloud-btn[data-status="idle"] { color: var(--accent); }
+.cloud-btn[data-status="syncing"] { opacity: .75; }
+.cloud-btn[data-status="error"] { color: var(--danger); border-color: var(--danger); }
+.auth-msg { margin: 0 0 6px; color: var(--text-strong); min-height: 1em; }
+.auth-msg:empty { display: none; }
+.dialog { overflow-y: auto; }
 .preview { height: min(55vh, 460px); resize: vertical; white-space: pre; font-size: 12.5px; }
 
 .toast {
